@@ -1,0 +1,50 @@
+# vim: set ts=4 sw=4 et filetype=bash:
+
+#Adapted from https://gist.github.com/nolanlawson/8694399 to use the gradle daemon and report for subproject tasks as well as root project tasks
+
+_gradle()
+
+{
+  local cur #=${COMP_WORDS[COMP_CWORD]}
+  _get_comp_words_by_ref -n : cur
+  local gradle_cmd='gradle'
+  if [[ -f ./gradlew ]]; then
+    gradle_cmd='./gradlew'
+  fi
+  if [[ -f ../gradlew ]]; then
+    gradle_cmd='../gradlew'
+  fi
+ 
+  local commands=''
+  local cache_dir="$HOME/.gradle_tabcompletion"
+  mkdir -p $cache_dir
+ 
+  # TODO: include the gradle version in the checksum?  It's kinda slow
+  #local gradle_version=$($gradle_cmd --version --quiet --no-color | grep '^Gradle ' | sed 's/Gradle //g')
+  
+  local gradle_files_checksum='';
+  if [[ -f build.gradle ]]; then # top-level gradle file
+    local all_gradle_files=$(find . -name build.gradle 2>/dev/null)
+    local file_sum="$(md5sum $all_gradle_files)"
+    gradle_files_checksum=$(echo $file_sum | md5sum - | awk '{print $1}')
+    #gradle_files_checksum=$(md5sum --quiet -s "$(md5sum $all_gradle_files)")
+  else # no top-level gradle file
+    gradle_files_checksum='no_gradle_files'
+  fi
+  if [[ -f $cache_dir/$gradle_files_checksum ]]; then # cached! yay!
+    commands=$(cat $cache_dir/$gradle_files_checksum)
+  else # not cached! boo-urns!
+    commands=$($gradle_cmd --daemon --no-color --quiet tasks --all | grep ' - ' | grep '^\S' | awk '{print $1}' | sed 's/\(.*:.*\)/:\1/g' |  tr '\n' ' ')
+    if [[ ! -z $commands ]]; then
+      echo $commands > $cache_dir/$gradle_files_checksum
+    fi
+  fi
+  local colonprefixes=${cur%"${cur##*:}"}
+  COMPREPLY=( $(compgen -W "$commands" -- $cur) )
+  local i=${#COMPREPLY[*]}
+  while [ $((--i)) -ge 0 ]; do
+     COMPREPLY[$i]=${COMPREPLY[$i]#"$colonprefixes"}
+  done
+}
+complete -F _gradle gradle
+complete -F _gradle gradlew
